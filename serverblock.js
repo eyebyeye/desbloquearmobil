@@ -528,8 +528,6 @@
 // });
 
 
-
-
 const express        = require('express');
 const http           = require('http');
 const { Server }     = require('socket.io');
@@ -600,7 +598,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Responder explícitamente a todas las peticiones OPTIONS (preflight)
-app.options('*', cors(corsOptions));
+app.options('/{*path}', cors(corsOptions));
 
 app.use(express.json());
 
