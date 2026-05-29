@@ -1,0 +1,16 @@
+# Dependencias
+node_modules/
+
+# Firebase — NUNCA a GitHub
+serviceAccountKey.json
+
+# Variables de entorno
+.env
+
+# Ngrok ejecutable
+ngrok/
+ngrok-v3-stable-windows-amd64
+
+# Logs
+*.log
+package-lock.json
