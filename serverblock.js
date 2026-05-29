@@ -666,7 +666,19 @@ const { v4: uuidv4 } = require('uuid');
 const admin      = require('firebase-admin');
 
 // ── Firebase Init ──────────────────────────────────────────────────────────
-const serviceAccount = require('./serviceAccountKey.json');
+// ── DESPUÉS (esto) ────────────────────────────
+let serviceAccount;
+
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Producción (Render) — viene de variable de entorno
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  console.log('✅ Firebase: usando variable de entorno');
+} else {
+  // Local — usa el archivo JSON
+  serviceAccount = require('./serviceAccountKey.json');
+  console.log('✅ Firebase: usando serviceAccountKey.json local');
+}
+
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
