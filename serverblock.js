@@ -1269,6 +1269,397 @@
 //     console.log(`\n🚀 FinBlock v3 en http://localhost:${PORT}`);
 
 
+// const express        = require('express');
+// const http           = require('http');
+// const { Server }     = require('socket.io');
+// const cors           = require('cors');
+// const jwt            = require('jsonwebtoken');
+// const bcrypt         = require('bcryptjs');
+// const { v4: uuidv4 } = require('uuid');
+// const admin          = require('firebase-admin');
+// const fs             = require('fs');
+
+// // ── Firebase Init ──────────────────────────────────────────────────────────
+// function initFirebase() {
+//   const secretPath = '/etc/secrets/serviceAccountKey.json';
+//   if (fs.existsSync(secretPath)) {
+//     try {
+//       const sa = JSON.parse(fs.readFileSync(secretPath, 'utf8'));
+//       admin.initializeApp({ credential: admin.credential.cert(sa) });
+//       console.log(`✅ Firebase [SecretFile]: ${sa.project_id}`);
+//       return;
+//     } catch (err) { console.error('❌ SecretFile:', err.message); }
+//   }
+
+//   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+//   if (raw) {
+//     try {
+//       let cleaned = raw.trim();
+//       if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
+//       const sa = JSON.parse(cleaned);
+//       if (sa.private_key) sa.private_key = sa.private_key.replace(/\\n/g, '\n');
+//       admin.initializeApp({ credential: admin.credential.cert(sa) });
+//       console.log(`✅ Firebase [ENV]: ${sa.project_id}`);
+//       return;
+//     } catch (err) { console.error('❌ ENV:', err.message); }
+//   }
+
+//   try {
+//     const sa = require('./serviceAccountKey.json');
+//     admin.initializeApp({ credential: admin.credential.cert(sa) });
+//     console.log('✅ Firebase [local]');
+//   } catch {
+//     console.error('❌ Sin credenciales Firebase');
+//     process.exit(1);
+//   }
+// }
+
+// initFirebase();
+// const db = admin.firestore();
+
+// const app    = express();
+// const server = http.createServer(app);
+
+// const corsOptions = {
+//   origin: function (origin, callback) { callback(null, true); },
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+//   credentials: true,
+//   optionsSuccessStatus: 200,
+// };
+// app.use(cors(corsOptions));
+// app.options('/{*path}', cors(corsOptions));
+// app.use(express.json());
+
+// const io = new Server(server, {
+//   cors: { origin: '*', methods: ['GET', 'POST'], credentials: false },
+// });
+
+// const JWT_SECRET    = process.env.JWT_SECRET || 'finblock-firebase-2026';
+// const clienteSocket = new Map();
+
+// // ── Seed admin ─────────────────────────────────────────────────────────────
+// async function seedAdmin() {
+//   try {
+//     const ref  = db.collection('financieros').doc('gabriel0730');
+//     const snap = await ref.get();
+//     if (!snap.exists) {
+//       const hash = await bcrypt.hash('12345678', 10);
+//       await ref.set({ id: 'gabriel0730', nombre: 'Gabriel Admin', email: 'gabriel@finblock.com', username: 'gabriel0730', password: hash, creadoEn: admin.firestore.FieldValue.serverTimestamp() });
+//       console.log('✅ Admin creado: gabriel0730 / 12345678');
+//     } else {
+//       console.log('✅ Admin ya existe');
+//     }
+//   } catch (err) { console.error('❌ seedAdmin:', err.message); }
+// }
+
+// // ── JWT Middleware ─────────────────────────────────────────────────────────
+// function verificarToken(req, res, next) {
+//   const auth = req.headers.authorization;
+//   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Sin token' });
+//   try { req.financiero = jwt.verify(auth.slice(7), JWT_SECRET); next(); }
+//   catch { res.status(401).json({ error: 'Token inválido' }); }
+// }
+
+// // ── REST ───────────────────────────────────────────────────────────────────
+// app.get('/health', (_, res) => res.json({ ok: true, activos: clienteSocket.size, uptime: process.uptime() }));
+
+// app.post('/api/auth/login', async (req, res) => {
+//   try {
+//     const { username, password } = req.body;
+//     if (!username || !password) return res.status(400).json({ error: 'Datos requeridos' });
+//     const snap = await db.collection('financieros').where('username', '==', username).limit(1).get();
+//     if (snap.empty) return res.status(401).json({ error: 'Credenciales inválidas' });
+//     const fin = snap.docs[0].data();
+//     if (!(await bcrypt.compare(password, fin.password))) return res.status(401).json({ error: 'Credenciales inválidas' });
+//     const token = jwt.sign({ financieroId: fin.id, nombre: fin.nombre, username: fin.username }, JWT_SECRET, { expiresIn: '8h' });
+//     res.json({ token, financiero: { id: fin.id, nombre: fin.nombre, username: fin.username } });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.post('/api/auth/setup', async (req, res) => {
+//   try {
+//     const { username, password } = req.body;
+//     if (!username || !password) return res.status(400).json({ error: 'Datos incompletos' });
+//     if (password.length < 8) return res.status(400).json({ error: 'Contraseña muy corta' });
+//     const existing = await db.collection('financieros').where('username', '==', username.trim()).limit(1).get();
+//     if (!existing.empty) return res.status(409).json({ error: 'Usuario ya existe' });
+//     const hash = await bcrypt.hash(password, 10);
+//     const id = username.trim().toLowerCase().replace(/\s+/g, '_');
+//     await db.collection('financieros').doc(id).set({ id, nombre: `Admin ${username}`, email: `${id}@finblock.com`, username: username.trim(), password: hash, creadoEn: admin.firestore.FieldValue.serverTimestamp() });
+//     res.json({ ok: true, mensaje: `Admin '${username}' creado` });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.post('/api/verificar-pin', async (req, res) => {
+//   try {
+//     const { deviceToken } = req.body;
+//     if (!deviceToken) return res.status(400).json({ error: 'PIN requerido' });
+//     const snap = await db.collection('clientes').where('deviceToken', '==', deviceToken).limit(1).get();
+//     if (snap.empty) return res.status(404).json({ error: 'PIN inválido' });
+//     const c = snap.docs[0].data();
+//     res.json({ ok: true, nombre: c.nombre, estado: c.estado });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.get('/api/mis-clientes', verificarToken, async (req, res) => {
+//   try {
+//     res.json(await getMisClientes(req.financiero.financieroId));
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.post('/api/clientes', verificarToken, async (req, res) => {
+//   try {
+//     const { nombre } = req.body;
+//     if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+//     const clienteId   = `cli-${uuidv4().slice(0, 8)}`;
+//     const deviceToken = generarPIN();
+//     await db.collection('clientes').doc(clienteId).set({
+//       clienteId, nombre,
+//       financieroId: req.financiero.financieroId,
+//       deviceToken, estado: 'activo',
+//       creadoEn: admin.firestore.FieldValue.serverTimestamp()
+//     });
+//     res.json({ clienteId, nombre, deviceToken });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.delete('/api/clientes/:id', verificarToken, async (req, res) => {
+//   try {
+//     const snap = await db.collection('clientes').doc(req.params.id).get();
+//     if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+//     if (snap.data().financieroId !== req.financiero.financieroId) return res.status(403).json({ error: 'Sin permiso' });
+//     await db.collection('clientes').doc(req.params.id).delete();
+//     res.json({ ok: true });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.post('/api/clientes/:id/bloquear', verificarToken, async (req, res) => {
+//   try {
+//     const r = await accionCliente(req.params.id, req.financiero.financieroId, 'bloqueado', 0);
+//     if (r.error) return res.status(r.status).json({ error: r.error });
+//     res.json({ ok: true });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// app.post('/api/clientes/:id/desbloquear', verificarToken, async (req, res) => {
+//   try {
+//     const ms = req.body.ms || (5 * 86400000); // default 5 días
+//     const r  = await accionCliente(req.params.id, req.financiero.financieroId, 'activo', ms);
+//     if (r.error) return res.status(r.status).json({ error: r.error });
+//     res.json({ ok: true });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+// // ── Helpers ────────────────────────────────────────────────────────────────
+// function generarPIN() {
+//   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+//   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+// }
+
+// // ms = duración en millisegundos (0 = bloqueo, >0 = desbloqueo con tiempo)
+// async function accionCliente(clienteId, financieroId, nuevoEstado, ms) {
+//   const ref  = db.collection('clientes').doc(clienteId);
+//   const snap = await ref.get();
+//   if (!snap.exists) return { error: 'No encontrado', status: 404 };
+//   const c = snap.data();
+//   if (c.financieroId !== financieroId) return { error: 'Sin permiso', status: 403 };
+
+//   const updateData = { estado: nuevoEstado };
+
+//   if (nuevoEstado === 'activo' && ms > 0) {
+//     updateData.vencimiento = Date.now() + ms;
+//   }
+//   if (nuevoEstado === 'bloqueado') {
+//     updateData.vencimiento = null;
+//   }
+
+//   await ref.update(updateData);
+
+//   const evento  = nuevoEstado === 'bloqueado' ? 'orden-bloquear' : 'orden-desbloquear';
+//   const mensaje = nuevoEstado === 'bloqueado'
+//     ? 'Dispositivo bloqueado por falta de pago.'
+//     : 'Dispositivo desbloqueado.';
+
+//   const payload = {
+//     mensaje,
+//     timestamp: new Date().toISOString(),
+//     ...(nuevoEstado === 'activo' && ms > 0 ? { vencimiento: updateData.vencimiento } : {})
+//   };
+
+//   const sid = clienteSocket.get(clienteId);
+//   if (sid) io.to(sid).emit(evento, payload);
+
+//   notificarAdmins(financieroId);
+//   return { ok: true };
+// }
+
+// async function getMisClientes(financieroId) {
+//   const snap = await db.collection('clientes').where('financieroId', '==', financieroId).get();
+//   return snap.docs.map(d => {
+//     const c = d.data();
+//     return {
+//       clienteId:   c.clienteId,
+//       nombre:      c.nombre,
+//       estado:      c.estado,
+//       deviceToken: c.deviceToken,
+//       conectado:   clienteSocket.has(c.clienteId),
+//       vencimiento: c.vencimiento || null,
+//     };
+//   });
+// }
+
+// async function notificarAdmins(financieroId) {
+//   try { io.to(`admin-${financieroId}`).emit('dispositivos-actualizados', await getMisClientes(financieroId)); }
+//   catch (err) { console.error('notificarAdmins:', err.message); }
+// }
+
+// // ── Socket.io auth ─────────────────────────────────────────────────────────
+// io.use(async (socket, next) => {
+//   const { tipo, token } = socket.handshake.auth;
+//   if (tipo === 'cliente') {
+//     try {
+//       const snap = await db.collection('clientes').where('deviceToken', '==', token).limit(1).get();
+//       if (snap.empty) return next(new Error('PIN inválido'));
+//       const c = snap.docs[0].data();
+//       Object.assign(socket.data, { tipo: 'cliente', clienteId: c.clienteId, nombre: c.nombre, financieroId: c.financieroId, estado: c.estado });
+//       return next();
+//     } catch { return next(new Error('Error auth cliente')); }
+//   }
+//   if (tipo === 'admin') {
+//     try {
+//       const d = jwt.verify(token, JWT_SECRET);
+//       Object.assign(socket.data, { tipo: 'admin', financieroId: d.financieroId, nombre: d.nombre });
+//       return next();
+//     } catch { return next(new Error('JWT inválido')); }
+//   }
+//   next(new Error('Tipo desconocido'));
+// });
+
+// // ── Socket.io eventos ──────────────────────────────────────────────────────
+// io.on('connection', async (socket) => {
+//   const { tipo, financieroId, clienteId } = socket.data;
+
+//   // ── CLIENTE ───────────────────────────────────────────────────────────────
+//   if (tipo === 'cliente') {
+//     clienteSocket.set(clienteId, socket.id);
+//     socket.join(`cliente-${clienteId}`);
+//     console.log(`[CLIENTE] ${socket.data.nombre} conectado`);
+
+//     if (socket.data.estado === 'bloqueado') {
+//       socket.emit('orden-bloquear', {
+//         mensaje: 'Dispositivo bloqueado por falta de pago.',
+//         timestamp: new Date().toISOString()
+//       });
+//     }
+
+//     notificarAdmins(financieroId);
+//     socket.on('disconnect', () => {
+//       clienteSocket.delete(clienteId);
+//       notificarAdmins(financieroId);
+//     });
+//   }
+
+//   // ── ADMIN ─────────────────────────────────────────────────────────────────
+//   if (tipo === 'admin') {
+//     socket.join(`admin-${financieroId}`);
+//     console.log(`[ADMIN] ${socket.data.nombre} conectado`);
+//     socket.emit('dispositivos-actualizados', await getMisClientes(financieroId));
+
+//     // Bloquear cliente
+//     socket.on('admin-bloquear', async ({ clienteId: t }) => {
+//       try {
+//         const snap = await db.collection('clientes').doc(t).get();
+//         if (!snap.exists) return;
+//         const c = snap.data();
+//         if (c.financieroId !== financieroId)
+//           return socket.emit('error-accion', { mensaje: 'Sin permiso' });
+//         await db.collection('clientes').doc(t).update({ estado: 'bloqueado', vencimiento: null });
+//         io.to(`cliente-${t}`).emit('orden-bloquear', {
+//           mensaje: 'Dispositivo bloqueado por falta de pago.',
+//           timestamp: new Date().toISOString()
+//         });
+//         notificarAdmins(financieroId);
+//       } catch (err) { console.error('admin-bloquear:', err.message); }
+//     });
+
+//     // ★ Desbloquear con ms ★
+//     socket.on('admin-desbloquear', async ({ clienteId: t, ms }) => {
+//       try {
+//         const snap = await db.collection('clientes').doc(t).get();
+//         if (!snap.exists) return;
+//         const c = snap.data();
+//         if (c.financieroId !== financieroId)
+//           return socket.emit('error-accion', { mensaje: 'Sin permiso' });
+
+//         const duracion    = ms || (5 * 86400000); // default 5 días
+//         const vencimiento = Date.now() + duracion;
+
+//         await db.collection('clientes').doc(t).update({ estado: 'activo', vencimiento });
+
+//         io.to(`cliente-${t}`).emit('orden-desbloquear', {
+//           mensaje: 'Dispositivo desbloqueado.',
+//           timestamp: new Date().toISOString(),
+//           vencimiento
+//         });
+
+//         notificarAdmins(financieroId);
+//       } catch (err) { console.error('admin-desbloquear:', err.message); }
+//     });
+
+//     // Bloquear todos
+//     socket.on('admin-bloquear-todos', async () => {
+//       try {
+//         const snap = await db.collection('clientes').where('financieroId', '==', financieroId).get();
+//         const batch = db.batch();
+//         snap.docs.forEach(d => batch.update(d.ref, { estado: 'bloqueado', vencimiento: null }));
+//         await batch.commit();
+//         snap.docs.forEach(d => io.to(`cliente-${d.data().clienteId}`).emit('orden-bloquear', {
+//           mensaje: 'Bloqueado por falta de pago.', timestamp: new Date().toISOString()
+//         }));
+//         notificarAdmins(financieroId);
+//       } catch (err) { console.error('bloquear-todos:', err.message); }
+//     });
+
+//     // ★ Desbloquear todos con ms ★
+//     socket.on('admin-desbloquear-todos', async ({ ms } = {}) => {
+//       try {
+//         const duracion    = ms || (5 * 86400000);
+//         const vencimiento = Date.now() + duracion;
+
+//         const snap = await db.collection('clientes').where('financieroId', '==', financieroId).get();
+//         const batch = db.batch();
+//         snap.docs.forEach(d => batch.update(d.ref, { estado: 'activo', vencimiento }));
+//         await batch.commit();
+
+//         snap.docs.forEach(d => io.to(`cliente-${d.data().clienteId}`).emit('orden-desbloquear', {
+//           mensaje: 'Dispositivo desbloqueado.',
+//           timestamp: new Date().toISOString(),
+//           vencimiento
+//         }));
+
+//         notificarAdmins(financieroId);
+//       } catch (err) { console.error('desbloquear-todos:', err.message); }
+//     });
+
+//     socket.on('disconnect', () => console.log(`[ADMIN] ${socket.data.nombre} desconectado`));
+//   }
+// });
+
+// const PORT = process.env.PORT || 3000;
+// seedAdmin().then(() => {
+//   server.listen(PORT, () => {
+//     console.log(`\n🚀 FinBlock v3 en http://localhost:${PORT}`);
+//     console.log('   Admin: gabriel0730 / 12345678\n');
+//   });
+// });
+//     console.log('   Admin: gabriel0730 / 12345678\n');
+//   });
+// });
+
+
+
+
 const express        = require('express');
 const http           = require('http');
 const { Server }     = require('socket.io');
@@ -1290,7 +1681,6 @@ function initFirebase() {
       return;
     } catch (err) { console.error('❌ SecretFile:', err.message); }
   }
-
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (raw) {
     try {
@@ -1303,7 +1693,6 @@ function initFirebase() {
       return;
     } catch (err) { console.error('❌ ENV:', err.message); }
   }
-
   try {
     const sa = require('./serviceAccountKey.json');
     admin.initializeApp({ credential: admin.credential.cert(sa) });
@@ -1336,7 +1725,7 @@ const io = new Server(server, {
 });
 
 const JWT_SECRET    = process.env.JWT_SECRET || 'finblock-firebase-2026';
-const clienteSocket = new Map();
+const clienteSocket = new Map(); // clienteId → socket.id
 
 // ── Seed admin ─────────────────────────────────────────────────────────────
 async function seedAdmin() {
@@ -1345,7 +1734,11 @@ async function seedAdmin() {
     const snap = await ref.get();
     if (!snap.exists) {
       const hash = await bcrypt.hash('12345678', 10);
-      await ref.set({ id: 'gabriel0730', nombre: 'Gabriel Admin', email: 'gabriel@finblock.com', username: 'gabriel0730', password: hash, creadoEn: admin.firestore.FieldValue.serverTimestamp() });
+      await ref.set({
+        id: 'gabriel0730', nombre: 'Gabriel Admin',
+        email: 'gabriel@finblock.com', username: 'gabriel0730',
+        password: hash, creadoEn: admin.firestore.FieldValue.serverTimestamp()
+      });
       console.log('✅ Admin creado: gabriel0730 / 12345678');
     } else {
       console.log('✅ Admin ya existe');
@@ -1361,8 +1754,11 @@ function verificarToken(req, res, next) {
   catch { res.status(401).json({ error: 'Token inválido' }); }
 }
 
-// ── REST ───────────────────────────────────────────────────────────────────
-app.get('/health', (_, res) => res.json({ ok: true, activos: clienteSocket.size, uptime: process.uptime() }));
+// ══════════════════════════════════════════════════════════════════════════
+// REST — Auth
+// ══════════════════════════════════════════════════════════════════════════
+app.get('/health', (_, res) =>
+  res.json({ ok: true, activos: clienteSocket.size, uptime: process.uptime() }));
 
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -1371,8 +1767,12 @@ app.post('/api/auth/login', async (req, res) => {
     const snap = await db.collection('financieros').where('username', '==', username).limit(1).get();
     if (snap.empty) return res.status(401).json({ error: 'Credenciales inválidas' });
     const fin = snap.docs[0].data();
-    if (!(await bcrypt.compare(password, fin.password))) return res.status(401).json({ error: 'Credenciales inválidas' });
-    const token = jwt.sign({ financieroId: fin.id, nombre: fin.nombre, username: fin.username }, JWT_SECRET, { expiresIn: '8h' });
+    if (!(await bcrypt.compare(password, fin.password)))
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    const token = jwt.sign(
+      { financieroId: fin.id, nombre: fin.nombre, username: fin.username },
+      JWT_SECRET, { expiresIn: '8h' }
+    );
     res.json({ token, financiero: { id: fin.id, nombre: fin.nombre, username: fin.username } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1382,11 +1782,16 @@ app.post('/api/auth/setup', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Datos incompletos' });
     if (password.length < 8) return res.status(400).json({ error: 'Contraseña muy corta' });
-    const existing = await db.collection('financieros').where('username', '==', username.trim()).limit(1).get();
+    const existing = await db.collection('financieros')
+      .where('username', '==', username.trim()).limit(1).get();
     if (!existing.empty) return res.status(409).json({ error: 'Usuario ya existe' });
     const hash = await bcrypt.hash(password, 10);
-    const id = username.trim().toLowerCase().replace(/\s+/g, '_');
-    await db.collection('financieros').doc(id).set({ id, nombre: `Admin ${username}`, email: `${id}@finblock.com`, username: username.trim(), password: hash, creadoEn: admin.firestore.FieldValue.serverTimestamp() });
+    const id   = username.trim().toLowerCase().replace(/\s+/g, '_');
+    await db.collection('financieros').doc(id).set({
+      id, nombre: `Admin ${username}`, email: `${id}@finblock.com`,
+      username: username.trim(), password: hash,
+      creadoEn: admin.firestore.FieldValue.serverTimestamp()
+    });
     res.json({ ok: true, mensaje: `Admin '${username}' creado` });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1395,13 +1800,17 @@ app.post('/api/verificar-pin', async (req, res) => {
   try {
     const { deviceToken } = req.body;
     if (!deviceToken) return res.status(400).json({ error: 'PIN requerido' });
-    const snap = await db.collection('clientes').where('deviceToken', '==', deviceToken).limit(1).get();
+    const snap = await db.collection('clientes')
+      .where('deviceToken', '==', deviceToken).limit(1).get();
     if (snap.empty) return res.status(404).json({ error: 'PIN inválido' });
     const c = snap.docs[0].data();
     res.json({ ok: true, nombre: c.nombre, estado: c.estado });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// REST — Clientes
+// ══════════════════════════════════════════════════════════════════════════
 app.get('/api/mis-clientes', verificarToken, async (req, res) => {
   try {
     res.json(await getMisClientes(req.financiero.financieroId));
@@ -1410,17 +1819,34 @@ app.get('/api/mis-clientes', verificarToken, async (req, res) => {
 
 app.post('/api/clientes', verificarToken, async (req, res) => {
   try {
-    const { nombre } = req.body;
+    const { nombre, planMonto, planCuotas, planFrecuenciaDias } = req.body;
     if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+
     const clienteId   = `cli-${uuidv4().slice(0, 8)}`;
     const deviceToken = generarPIN();
-    await db.collection('clientes').doc(clienteId).set({
+
+    const data = {
       clienteId, nombre,
       financieroId: req.financiero.financieroId,
-      deviceToken, estado: 'activo',
-      creadoEn: admin.firestore.FieldValue.serverTimestamp()
-    });
-    res.json({ clienteId, nombre, deviceToken });
+      deviceToken,
+      estado: 'activo',
+      creadoEn: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Si viene plan de pagos, guardarlo
+    if (planMonto && planCuotas) {
+      data.plan = {
+        monto:          Number(planMonto),
+        cuotas:         Number(planCuotas),
+        cuotasPagadas:  0,
+        frecuenciaDias: Number(planFrecuenciaDias) || 30,
+        proximoPago:    Date.now() + (Number(planFrecuenciaDias) || 30) * 86400000,
+        creadoEn:       Date.now(),
+      };
+    }
+
+    await db.collection('clientes').doc(clienteId).set(data);
+    res.json({ clienteId, nombre, deviceToken, plan: data.plan || null });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1428,12 +1854,115 @@ app.delete('/api/clientes/:id', verificarToken, async (req, res) => {
   try {
     const snap = await db.collection('clientes').doc(req.params.id).get();
     if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
-    if (snap.data().financieroId !== req.financiero.financieroId) return res.status(403).json({ error: 'Sin permiso' });
+    if (snap.data().financieroId !== req.financiero.financieroId)
+      return res.status(403).json({ error: 'Sin permiso' });
     await db.collection('clientes').doc(req.params.id).delete();
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Actualizar plan de pagos ───────────────────────────────────────────────
+app.put('/api/clientes/:id/plan', verificarToken, async (req, res) => {
+  try {
+    const ref  = db.collection('clientes').doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+    if (snap.data().financieroId !== req.financiero.financieroId)
+      return res.status(403).json({ error: 'Sin permiso' });
+
+    const { monto, cuotas, frecuenciaDias } = req.body;
+    const plan = {
+      monto:          Number(monto),
+      cuotas:         Number(cuotas),
+      cuotasPagadas:  snap.data().plan?.cuotasPagadas || 0,
+      frecuenciaDias: Number(frecuenciaDias) || 30,
+      proximoPago:    Date.now() + (Number(frecuenciaDias) || 30) * 86400000,
+      creadoEn:       snap.data().plan?.creadoEn || Date.now(),
+    };
+    await ref.update({ plan });
+    res.json({ ok: true, plan });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// REST — Pagos
+// ══════════════════════════════════════════════════════════════════════════
+
+// Registrar un pago manual
+app.post('/api/clientes/:id/pagos', verificarToken, async (req, res) => {
+  try {
+    const ref  = db.collection('clientes').doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+    const c = snap.data();
+    if (c.financieroId !== req.financiero.financieroId)
+      return res.status(403).json({ error: 'Sin permiso' });
+
+    const { monto, nota, msPlazo } = req.body;
+    if (!monto) return res.status(400).json({ error: 'Monto requerido' });
+
+    const pagoId = `pago-${uuidv4().slice(0, 8)}`;
+    const ahora  = Date.now();
+
+    // Guardar pago en subcolección
+    await db.collection('clientes').doc(req.params.id)
+      .collection('pagos').doc(pagoId).set({
+        pagoId,
+        monto:    Number(monto),
+        nota:     nota || '',
+        fecha:    ahora,
+        creadoPor: req.financiero.financieroId,
+      });
+
+    // Actualizar plan si existe
+    const updates = {};
+    if (c.plan) {
+      const nuevasCuotas = (c.plan.cuotasPagadas || 0) + 1;
+      const frecMs       = (c.plan.frecuenciaDias || 30) * 86400000;
+      updates['plan.cuotasPagadas'] = nuevasCuotas;
+      updates['plan.proximoPago']   = ahora + frecMs;
+    }
+
+    // Si viene msPlazo → desbloquear con tiempo
+    const duracion    = msPlazo || (30 * 86400000); // default 30 días
+    const vencimiento = ahora + duracion;
+    updates.estado      = 'activo';
+    updates.vencimiento = vencimiento;
+
+    await ref.update(updates);
+
+    // Emitir desbloqueo al dispositivo
+    const sid = clienteSocket.get(req.params.id);
+    if (sid) {
+      io.to(sid).emit('orden-desbloquear', {
+        mensaje: `Pago de $${monto} registrado. Dispositivo desbloqueado.`,
+        timestamp: new Date().toISOString(),
+        vencimiento,
+      });
+    }
+
+    await notificarAdmins(c.financieroId);
+    res.json({ ok: true, pagoId, vencimiento });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Obtener historial de pagos de un cliente
+app.get('/api/clientes/:id/pagos', verificarToken, async (req, res) => {
+  try {
+    const snap = await db.collection('clientes').doc(req.params.id).get();
+    if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+    if (snap.data().financieroId !== req.financiero.financieroId)
+      return res.status(403).json({ error: 'Sin permiso' });
+
+    const pagosSnap = await db.collection('clientes').doc(req.params.id)
+      .collection('pagos').orderBy('fecha', 'desc').get();
+
+    const pagos = pagosSnap.docs.map(d => d.data());
+    res.json(pagos);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Acción bloquear/desbloquear por REST (legacy)
 app.post('/api/clientes/:id/bloquear', verificarToken, async (req, res) => {
   try {
     const r = await accionCliente(req.params.id, req.financiero.financieroId, 'bloqueado', 0);
@@ -1444,20 +1973,21 @@ app.post('/api/clientes/:id/bloquear', verificarToken, async (req, res) => {
 
 app.post('/api/clientes/:id/desbloquear', verificarToken, async (req, res) => {
   try {
-    const ms = req.body.ms || (5 * 86400000); // default 5 días
+    const ms = req.body.ms || (5 * 86400000);
     const r  = await accionCliente(req.params.id, req.financiero.financieroId, 'activo', ms);
     if (r.error) return res.status(r.status).json({ error: r.error });
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════════════════════════
 function generarPIN() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
-// ms = duración en millisegundos (0 = bloqueo, >0 = desbloqueo con tiempo)
 async function accionCliente(clienteId, financieroId, nuevoEstado, ms) {
   const ref  = db.collection('clientes').doc(clienteId);
   const snap = await ref.get();
@@ -1466,36 +1996,28 @@ async function accionCliente(clienteId, financieroId, nuevoEstado, ms) {
   if (c.financieroId !== financieroId) return { error: 'Sin permiso', status: 403 };
 
   const updateData = { estado: nuevoEstado };
-
-  if (nuevoEstado === 'activo' && ms > 0) {
-    updateData.vencimiento = Date.now() + ms;
-  }
-  if (nuevoEstado === 'bloqueado') {
-    updateData.vencimiento = null;
-  }
-
+  if (nuevoEstado === 'activo' && ms > 0) updateData.vencimiento = Date.now() + ms;
+  if (nuevoEstado === 'bloqueado')        updateData.vencimiento = null;
   await ref.update(updateData);
 
   const evento  = nuevoEstado === 'bloqueado' ? 'orden-bloquear' : 'orden-desbloquear';
   const mensaje = nuevoEstado === 'bloqueado'
     ? 'Dispositivo bloqueado por falta de pago.'
     : 'Dispositivo desbloqueado.';
-
   const payload = {
-    mensaje,
-    timestamp: new Date().toISOString(),
+    mensaje, timestamp: new Date().toISOString(),
     ...(nuevoEstado === 'activo' && ms > 0 ? { vencimiento: updateData.vencimiento } : {})
   };
 
   const sid = clienteSocket.get(clienteId);
   if (sid) io.to(sid).emit(evento, payload);
-
   notificarAdmins(financieroId);
   return { ok: true };
 }
 
 async function getMisClientes(financieroId) {
-  const snap = await db.collection('clientes').where('financieroId', '==', financieroId).get();
+  const snap = await db.collection('clientes')
+    .where('financieroId', '==', financieroId).get();
   return snap.docs.map(d => {
     const c = d.data();
     return {
@@ -1505,24 +2027,33 @@ async function getMisClientes(financieroId) {
       deviceToken: c.deviceToken,
       conectado:   clienteSocket.has(c.clienteId),
       vencimiento: c.vencimiento || null,
+      plan:        c.plan        || null,
     };
   });
 }
 
 async function notificarAdmins(financieroId) {
-  try { io.to(`admin-${financieroId}`).emit('dispositivos-actualizados', await getMisClientes(financieroId)); }
-  catch (err) { console.error('notificarAdmins:', err.message); }
+  try {
+    io.to(`admin-${financieroId}`)
+      .emit('dispositivos-actualizados', await getMisClientes(financieroId));
+  } catch (err) { console.error('notificarAdmins:', err.message); }
 }
 
-// ── Socket.io auth ─────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// Socket.io
+// ══════════════════════════════════════════════════════════════════════════
 io.use(async (socket, next) => {
   const { tipo, token } = socket.handshake.auth;
   if (tipo === 'cliente') {
     try {
-      const snap = await db.collection('clientes').where('deviceToken', '==', token).limit(1).get();
+      const snap = await db.collection('clientes')
+        .where('deviceToken', '==', token).limit(1).get();
       if (snap.empty) return next(new Error('PIN inválido'));
       const c = snap.docs[0].data();
-      Object.assign(socket.data, { tipo: 'cliente', clienteId: c.clienteId, nombre: c.nombre, financieroId: c.financieroId, estado: c.estado });
+      Object.assign(socket.data, {
+        tipo: 'cliente', clienteId: c.clienteId,
+        nombre: c.nombre, financieroId: c.financieroId, estado: c.estado
+      });
       return next();
     } catch { return next(new Error('Error auth cliente')); }
   }
@@ -1536,7 +2067,6 @@ io.use(async (socket, next) => {
   next(new Error('Tipo desconocido'));
 });
 
-// ── Socket.io eventos ──────────────────────────────────────────────────────
 io.on('connection', async (socket) => {
   const { tipo, financieroId, clienteId } = socket.data;
 
@@ -1566,7 +2096,6 @@ io.on('connection', async (socket) => {
     console.log(`[ADMIN] ${socket.data.nombre} conectado`);
     socket.emit('dispositivos-actualizados', await getMisClientes(financieroId));
 
-    // Bloquear cliente
     socket.on('admin-bloquear', async ({ clienteId: t }) => {
       try {
         const snap = await db.collection('clientes').doc(t).get();
@@ -1583,7 +2112,6 @@ io.on('connection', async (socket) => {
       } catch (err) { console.error('admin-bloquear:', err.message); }
     });
 
-    // ★ Desbloquear con ms ★
     socket.on('admin-desbloquear', async ({ clienteId: t, ms }) => {
       try {
         const snap = await db.collection('clientes').doc(t).get();
@@ -1592,25 +2120,22 @@ io.on('connection', async (socket) => {
         if (c.financieroId !== financieroId)
           return socket.emit('error-accion', { mensaje: 'Sin permiso' });
 
-        const duracion    = ms || (5 * 86400000); // default 5 días
+        const duracion    = ms || (5 * 86400000);
         const vencimiento = Date.now() + duracion;
-
         await db.collection('clientes').doc(t).update({ estado: 'activo', vencimiento });
-
         io.to(`cliente-${t}`).emit('orden-desbloquear', {
           mensaje: 'Dispositivo desbloqueado.',
           timestamp: new Date().toISOString(),
-          vencimiento
+          vencimiento,
         });
-
         notificarAdmins(financieroId);
       } catch (err) { console.error('admin-desbloquear:', err.message); }
     });
 
-    // Bloquear todos
     socket.on('admin-bloquear-todos', async () => {
       try {
-        const snap = await db.collection('clientes').where('financieroId', '==', financieroId).get();
+        const snap = await db.collection('clientes')
+          .where('financieroId', '==', financieroId).get();
         const batch = db.batch();
         snap.docs.forEach(d => batch.update(d.ref, { estado: 'bloqueado', vencimiento: null }));
         await batch.commit();
@@ -1621,38 +2146,31 @@ io.on('connection', async (socket) => {
       } catch (err) { console.error('bloquear-todos:', err.message); }
     });
 
-    // ★ Desbloquear todos con ms ★
     socket.on('admin-desbloquear-todos', async ({ ms } = {}) => {
       try {
         const duracion    = ms || (5 * 86400000);
         const vencimiento = Date.now() + duracion;
-
-        const snap = await db.collection('clientes').where('financieroId', '==', financieroId).get();
+        const snap = await db.collection('clientes')
+          .where('financieroId', '==', financieroId).get();
         const batch = db.batch();
         snap.docs.forEach(d => batch.update(d.ref, { estado: 'activo', vencimiento }));
         await batch.commit();
-
         snap.docs.forEach(d => io.to(`cliente-${d.data().clienteId}`).emit('orden-desbloquear', {
-          mensaje: 'Dispositivo desbloqueado.',
-          timestamp: new Date().toISOString(),
-          vencimiento
+          mensaje: 'Dispositivo desbloqueado.', timestamp: new Date().toISOString(), vencimiento
         }));
-
         notificarAdmins(financieroId);
       } catch (err) { console.error('desbloquear-todos:', err.message); }
     });
 
-    socket.on('disconnect', () => console.log(`[ADMIN] ${socket.data.nombre} desconectado`));
+    socket.on('disconnect', () =>
+      console.log(`[ADMIN] ${socket.data.nombre} desconectado`));
   }
 });
 
 const PORT = process.env.PORT || 3000;
 seedAdmin().then(() => {
   server.listen(PORT, () => {
-    console.log(`\n🚀 FinBlock v3 en http://localhost:${PORT}`);
-    console.log('   Admin: gabriel0730 / 12345678\n');
-  });
-});
+    console.log(`\n🚀 FinBlock v4 en http://localhost:${PORT}`);
     console.log('   Admin: gabriel0730 / 12345678\n');
   });
 });
