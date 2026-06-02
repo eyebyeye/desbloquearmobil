@@ -2419,36 +2419,126 @@ app.delete('/api/clientes/:id', verificarToken, async (req, res) => {
 });
 
 // ── Actualizar plan de pagos ───────────────────────────────────────────────
-app.put('/api/clientes/:id/plan', verificarToken, async (req, res) => {
+// app.put('/api/clientes/:id/plan', verificarToken, async (req, res) => {
+//   try {
+//     const ref  = db.collection('clientes').doc(req.params.id);
+//     const snap = await ref.get();
+//     if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+//     if (snap.data().financieroId !== req.financiero.financieroId)
+//       return res.status(403).json({ error: 'Sin permiso' });
+
+//     const { monto, cuotas, frecuenciaDias } = req.body;
+//     const planActual = snap.data().plan || {};
+
+//     // Recalcular cuotasPagadas según saldo acumulado real y nuevo monto
+//     const saldoPagado   = planActual.saldoPagado || 0;
+//     const nuevoMonto    = Number(monto);
+//     const cuotasPagadas = Math.min(
+//       Math.floor(saldoPagado / nuevoMonto),
+//       Number(cuotas)
+//     );
+
+//     const plan = {
+//       monto:          nuevoMonto,
+//       cuotas:         Number(cuotas),
+//       cuotasPagadas,
+//       saldoPagado,
+//       frecuenciaDias: Number(frecuenciaDias) || 30,
+//       proximoPago:    Date.now() + (Number(frecuenciaDias) || 30) * 86400000,
+//       creadoEn:       planActual.creadoEn || Date.now(),
+//     };
+//     await ref.update({ plan });
+//     res.json({ ok: true, plan });
+//   } catch (err) { res.status(500).json({ error: err.message }); }
+// });
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// REEMPLAZA el endpoint POST /api/clientes/:id/pagos en tu server.js
+// ══════════════════════════════════════════════════════════════════════════
+
+app.post('/api/clientes/:id/pagos', verificarToken, async (req, res) => {
   try {
     const ref  = db.collection('clientes').doc(req.params.id);
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
-    if (snap.data().financieroId !== req.financiero.financieroId)
+    const c = snap.data();
+    if (c.financieroId !== req.financiero.financieroId)
       return res.status(403).json({ error: 'Sin permiso' });
 
-    const { monto, cuotas, frecuenciaDias } = req.body;
-    const planActual = snap.data().plan || {};
+    const { monto, nota, msPlazo } = req.body;
+    if (!monto) return res.status(400).json({ error: 'Monto requerido' });
 
-    // Recalcular cuotasPagadas según saldo acumulado real y nuevo monto
-    const saldoPagado   = planActual.saldoPagado || 0;
-    const nuevoMonto    = Number(monto);
-    const cuotasPagadas = Math.min(
-      Math.floor(saldoPagado / nuevoMonto),
-      Number(cuotas)
-    );
+    const montoReal = Number(monto);
+    const pagoId    = `pago-${uuidv4().slice(0, 8)}`;
+    const ahora     = Date.now();
 
-    const plan = {
-      monto:          nuevoMonto,
-      cuotas:         Number(cuotas),
-      cuotasPagadas,
-      saldoPagado,
-      frecuenciaDias: Number(frecuenciaDias) || 30,
-      proximoPago:    Date.now() + (Number(frecuenciaDias) || 30) * 86400000,
-      creadoEn:       planActual.creadoEn || Date.now(),
-    };
-    await ref.update({ plan });
-    res.json({ ok: true, plan });
+    // Guardar pago en subcolección con monto REAL
+    await db.collection('clientes').doc(req.params.id)
+      .collection('pagos').doc(pagoId).set({
+        pagoId,
+        monto:     montoReal,
+        nota:      nota || '',
+        fecha:     ahora,
+        creadoPor: req.financiero.financieroId,
+      });
+
+    const updates = {};
+    if (c.plan) {
+      const montoCuota  = c.plan.monto;
+      const totalCuotas = c.plan.cuotas;
+
+      // Acumular saldo REAL pagado
+      const saldoAnterior = c.plan.saldoPagado || 0;
+      const nuevoSaldo    = saldoAnterior + montoReal;
+
+      // ★ Saldo pendiente = monto total del plan - saldo real pagado
+      const montoTotalPlan = montoCuota * totalCuotas;
+      const saldoPendiente = Math.max(0, montoTotalPlan - nuevoSaldo);
+
+      // Cuotas COMPLETAS pagadas = floor(saldo / monto cuota)
+      const cuotasPagadas = Math.min(
+        Math.floor(nuevoSaldo / montoCuota),
+        totalCuotas
+      );
+
+      // Crédito sobrante (pago de más dentro de la cuota actual)
+      const creditoSobrante = nuevoSaldo - (cuotasPagadas * montoCuota);
+
+      // Avanzar próximo pago solo si se completó al menos una cuota nueva
+      const cuotasAnteriores = c.plan.cuotasPagadas || 0;
+      let proximoPago = c.plan.proximoPago;
+      if (cuotasPagadas > cuotasAnteriores) {
+        const cuotasNuevas = cuotasPagadas - cuotasAnteriores;
+        const frecMs       = (c.plan.frecuenciaDias || 30) * 86400000;
+        proximoPago = ahora + (frecMs * cuotasNuevas);
+      }
+
+      updates['plan.saldoPagado']    = nuevoSaldo;
+      updates['plan.saldoPendiente'] = saldoPendiente;   // ★ campo nuevo
+      updates['plan.creditoSobrante'] = creditoSobrante; // ★ crédito visible
+      updates['plan.cuotasPagadas']  = cuotasPagadas;
+      updates['plan.proximoPago']    = proximoPago;
+    }
+
+    const duracion    = msPlazo || (30 * 86400000);
+    const vencimiento = ahora + duracion;
+    updates.estado      = 'activo';
+    updates.vencimiento = vencimiento;
+
+    await ref.update(updates);
+
+    const sid = clienteSocket.get(req.params.id);
+    if (sid) {
+      io.to(sid).emit('orden-desbloquear', {
+        mensaje: `Pago de $${montoReal} registrado. Dispositivo desbloqueado.`,
+        timestamp: new Date().toISOString(),
+        vencimiento,
+      });
+    }
+
+    await notificarAdmins(c.financieroId);
+    res.json({ ok: true, pagoId, vencimiento });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
