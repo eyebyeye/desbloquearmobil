@@ -2132,6 +2132,45 @@ io.on('connection', async (socket) => {
       } catch (err) { console.error('admin-desbloquear:', err.message); }
     });
 
+    // ── Datos completos del cliente (para home2) ──────────────────────────────
+app.post('/api/cliente/datos', async (req, res) => {
+  try {
+    const { deviceToken } = req.body;
+    if (!deviceToken) return res.status(400).json({ error: 'PIN requerido' });
+
+    const snap = await db.collection('clientes')
+      .where('deviceToken', '==', deviceToken).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: 'PIN inválido' });
+
+    const c = snap.docs[0].data();
+    res.json({
+      clienteId:   c.clienteId,
+      nombre:      c.nombre,
+      estado:      c.estado,
+      vencimiento: c.vencimiento || null,
+      plan:        c.plan        || null,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Historial de pagos del cliente (usando PIN) ───────────────────────────
+app.post('/api/cliente/pagos', async (req, res) => {
+  try {
+    const { deviceToken } = req.body;
+    if (!deviceToken) return res.status(400).json({ error: 'PIN requerido' });
+
+    const snap = await db.collection('clientes')
+      .where('deviceToken', '==', deviceToken).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: 'PIN inválido' });
+
+    const clienteId = snap.docs[0].data().clienteId;
+    const pagosSnap = await db.collection('clientes').doc(clienteId)
+      .collection('pagos').orderBy('fecha', 'desc').limit(10).get();
+
+    res.json(pagosSnap.docs.map(d => d.data()));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+    
     socket.on('admin-bloquear-todos', async () => {
       try {
         const snap = await db.collection('clientes')
