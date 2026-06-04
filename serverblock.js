@@ -3408,32 +3408,6 @@ app.post('/api/cliente/datos', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-socket.on('cliente-vencido', async () => {
-    try {
-        const snap = await db.collection('clientes').doc(clienteId).get();
-        const nombre = snap.exists ? snap.data().nombre : clienteId;
-
-        console.log(`⛔ [VENCIDO] ${nombre}`);
-
-        // Actualizar estado en Firestore
-        await db.collection('clientes').doc(clienteId).update({
-            estado: 'bloqueado',
-            vencimiento: null
-        });
-
-        // ★ Notificar al admin con mensaje específico ★
-        io.to(`admin-${financieroId}`).emit('alerta-vencimiento', {
-            clienteId,
-            nombre,
-            mensaje: `⛔ ${nombre} — el tiempo venció y su dispositivo fue bloqueado automáticamente.`,
-            timestamp: new Date().toISOString()
-        });
-
-        notificarAdmins(financieroId);
-    } catch (err) {
-        console.error('cliente-vencido:', err.message);
-    }
-});
 
 app.post('/api/cliente/pagos', async (req, res) => {
   try {
