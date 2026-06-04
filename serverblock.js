@@ -2626,6 +2626,68 @@ app.post('/api/clientes/:id/pagos', verificarToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// REEMPLAZA el bloque comentado app.put('/api/clientes/:id/plan', ...)
+// en tu server.js con este endpoint activo.
+// ══════════════════════════════════════════════════════════════════════════
+
+app.put('/api/clientes/:id/plan', verificarToken, async (req, res) => {
+  try {
+    const ref  = db.collection('clientes').doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+    if (snap.data().financieroId !== req.financiero.financieroId)
+      return res.status(403).json({ error: 'Sin permiso' });
+
+    const { monto, cuotas, frecuenciaDias, cuotasPagadasManual } = req.body;
+    if (!monto || !cuotas)
+      return res.status(400).json({ error: 'monto y cuotas son requeridos' });
+
+    const planActual   = snap.data().plan || {};
+    const nuevoMonto   = Number(monto);
+    const nuevasCuotas = Number(cuotas);
+    const nuevaFrec    = Number(frecuenciaDias) || 30;
+
+    // Si el admin envía cuotasPagadasManual, usarlo directamente.
+    // Si no, recalcular desde saldoPagado acumulado para no perder pagos anteriores.
+    let cuotasPagadas;
+    let nuevoSaldo;
+
+    if (cuotasPagadasManual !== undefined && cuotasPagadasManual !== null && cuotasPagadasManual !== '') {
+      // Edición manual: el admin sabe cuántas cuotas van pagadas
+      cuotasPagadas = Math.min(Number(cuotasPagadasManual), nuevasCuotas);
+      // Reconstruir saldoPagado como referencia (cuotas × monto nuevo)
+      nuevoSaldo = cuotasPagadas * nuevoMonto;
+    } else {
+      // Mantener saldo real acumulado y recalcular cuotas según nuevo monto
+      nuevoSaldo    = planActual.saldoPagado || 0;
+      cuotasPagadas = Math.min(Math.floor(nuevoSaldo / nuevoMonto), nuevasCuotas);
+    }
+
+    const plan = {
+      monto:          nuevoMonto,
+      cuotas:         nuevasCuotas,
+      cuotasPagadas,
+      saldoPagado:    nuevoSaldo,
+      frecuenciaDias: nuevaFrec,
+      proximoPago:    Date.now() + nuevaFrec * 86400000,
+      creadoEn:       planActual.creadoEn || Date.now(),
+    };
+
+    await ref.update({ plan });
+
+    // Notificar al admin en tiempo real
+    await notificarAdmins(req.financiero.financieroId);
+
+    res.json({ ok: true, plan });
+  } catch (err) {
+    console.error('PUT /plan:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Obtener historial de pagos de un cliente
 app.get('/api/clientes/:id/pagos', verificarToken, async (req, res) => {
   try {
