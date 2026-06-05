@@ -2366,6 +2366,51 @@ app.post('/api/verificar-pin', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════
+// NUEVOS ENDPOINTS — pegar en server.js junto a los demás /api/clientes
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Generar / obtener código de emergencia ────────────────────────────────
+// Llamado por el servidor cuando bloquea a un cliente.
+// Guarda el código en Firestore y lo devuelve al admin.
+app.post('/api/clientes/:id/codigo-emergencia', verificarToken, async (req, res) => {
+  try {
+    const snap = await db.collection('clientes').doc(req.params.id).get();
+    if (!snap.exists) return res.status(404).json({ error: 'No encontrado' });
+    if (snap.data().financieroId !== req.financiero.financieroId)
+      return res.status(403).json({ error: 'Sin permiso' });
+
+    // Reusar código existente o generar uno nuevo de 8 dígitos
+    let codigo = snap.data().codigoEmergencia;
+    if (!codigo) {
+      codigo = Math.floor(10000000 + Math.random() * 90000000).toString();
+      await db.collection('clientes').doc(req.params.id).update({ codigoEmergencia: codigo });
+    }
+
+    res.json({ codigo });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Verificar código de emergencia (sin autenticación) ────────────────────
+// El dispositivo bloqueado lo llama localmente o puede llamarlo sin internet
+// (pero si tiene internet lo verifica también aquí).
+app.post('/api/verificar-codigo-emergencia', async (req, res) => {
+  try {
+    const { deviceToken, codigo } = req.body;
+    if (!deviceToken || !codigo) return res.status(400).json({ error: 'Datos requeridos' });
+
+    const snap = await db.collection('clientes')
+      .where('deviceToken', '==', deviceToken).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    const c = snap.docs[0].data();
+    if (c.codigoEmergencia !== codigo)
+      return res.status(401).json({ error: 'Código incorrecto' });
+
+    res.json({ ok: true, nombre: c.nombre });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
 // REST — Clientes
 // ══════════════════════════════════════════════════════════════════════════
 app.get('/api/mis-clientes', verificarToken, async (req, res) => {
